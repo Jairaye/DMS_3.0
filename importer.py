@@ -1,11 +1,23 @@
 import streamlit as st
 import pandas as pd
 
-def show_import_page():
-    st.title("📥 Data Import Setup")
-    st.markdown("Please upload the following files. All are optional, but missing files may limit functionality.")
+# ---- HARD-CODED SCHEMA ----
+DEALER_COLUMNS = [
+    "first_name", "last_name", "nametag_id", "ee_number", "email", "phone", "schedule",
+    "dealer_group", "AVAIL-SUN", "AVAIL-MON", "AVAIL-TUE", "AVAIL-WED",
+    "AVAIL-THU", "AVAIL-FRI", "AVAIL-SAT"
+]
 
-    # Initialize session storage for datasets
+TOURNAMENT_COLUMNS = [
+    "Date", "Time", "Event Number", "Event Name",
+    "Buy-in Amount", "Starting Chips", "Projection", "Longest Break (Dinner Break)"
+]
+
+def show_import_page():
+    st.title("📥 Import Dealer System Data")
+    st.markdown("Upload all applicable files. You may proceed without some, but certain features will be disabled.")
+
+    # Initialize placeholders
     if "dealer_df" not in st.session_state:
         st.session_state.dealer_df = None
     if "tournament_df" not in st.session_state:
@@ -13,67 +25,61 @@ def show_import_page():
     if "employee_df" not in st.session_state:
         st.session_state.employee_df = None
 
-    # --------------------------
-    # 🧍 Dealer List Upload
-    # --------------------------
-    st.header("🧍 Dealer List")
-    dealer_file = st.file_uploader("Upload Dealer List (.csv or .xlsx)", type=["csv", "xlsx"])
-
-    if dealer_file is not None:
+    # ---- Dealer Upload ----
+    st.subheader("🧍 Dealer List")
+    dealer_file = st.file_uploader("Upload Dealer List (.csv or .xlsx)", type=["csv", "xlsx"], key="dealer")
+    if dealer_file:
         try:
-            dealer_df = pd.read_csv(dealer_file) if dealer_file.name.endswith(".csv") else pd.read_excel(dealer_file)
-            st.session_state.dealer_df = dealer_df
-            st.success("Dealer List loaded successfully!")
-            st.dataframe(dealer_df.head())
+            df = pd.read_csv(dealer_file) if dealer_file.name.endswith(".csv") else pd.read_excel(dealer_file)
+            missing = [col for col in DEALER_COLUMNS if col not in df.columns]
+            if missing:
+                st.error(f"Missing columns: {', '.join(missing)}")
+            else:
+                st.success("✅ Dealer List uploaded successfully.")
+                st.session_state.dealer_df = df
+                st.dataframe(df.head())
         except Exception as e:
-            st.error(f"Dealer List error: {e}")
+            st.error(f"Error loading Dealer List: {e}")
 
-    # --------------------------
-    # ♠️ Tournament Schedule Upload
-    # --------------------------
-    st.header("♠️ Tournament Schedule")
-    tourney_file = st.file_uploader("Upload Tournament Schedule (.csv or .xlsx)", type=["csv", "xlsx"])
-
-    if tourney_file is not None:
+    # ---- Tournament Upload ----
+    st.subheader("♠️ Tournament Schedule")
+    tourney_file = st.file_uploader("Upload Tournament Schedule (.csv or .xlsx)", type=["csv", "xlsx"], key="tourney")
+    if tourney_file:
         try:
-            tourney_df = pd.read_csv(tourney_file) if tourney_file.name.endswith(".csv") else pd.read_excel(tourney_file)
-            st.session_state.tournament_df = tourney_df
-            st.success("Tournament Schedule loaded successfully!")
-            st.dataframe(tourney_df.head())
+            df = pd.read_csv(tourney_file) if tourney_file.name.endswith(".csv") else pd.read_excel(tourney_file)
+            missing = [col for col in TOURNAMENT_COLUMNS if col not in df.columns]
+            if missing:
+                st.error(f"Missing columns: {', '.join(missing)}")
+            else:
+                st.success("✅ Tournament Schedule uploaded successfully.")
+                st.session_state.tournament_df = df
+                st.dataframe(df.head())
         except Exception as e:
-            st.error(f"Tournament Schedule error: {e}")
+            st.error(f"Error loading Tournament Schedule: {e}")
 
-    # --------------------------
-    # 👥 Employee Schedule Upload
-    # --------------------------
-    st.header("👥 Employee Schedule")
-    employee_file = st.file_uploader("Upload Employee Schedule (.csv or .xlsx)", type=["csv", "xlsx"])
-
-    if employee_file is not None:
+    # ---- Employee Upload (No Schema Yet) ----
+    st.subheader("👥 Employee Schedule")
+    employee_file = st.file_uploader("Upload Employee Schedule (.csv or .xlsx)", type=["csv", "xlsx"], key="employee")
+    if employee_file:
         try:
-            employee_df = pd.read_csv(employee_file) if employee_file.name.endswith(".csv") else pd.read_excel(employee_file)
-            st.session_state.employee_df = employee_df
-            st.success("Employee Schedule loaded successfully!")
-            st.dataframe(employee_df.head())
+            df = pd.read_csv(employee_file) if employee_file.name.endswith(".csv") else pd.read_excel(employee_file)
+            st.success("✅ Employee Schedule uploaded.")
+            st.session_state.employee_df = df
+            st.dataframe(df.head())
         except Exception as e:
-            st.error(f"Employee Schedule error: {e}")
+            st.error(f"Error loading Employee Schedule: {e}")
 
-    # --------------------------
-    # ✅ Continue Button
-    # --------------------------
+    # ---- Continue Button ----
     st.divider()
     if st.button("Proceed to System"):
         st.session_state.data_loaded = True
         st.experimental_rerun()
 
-    # 🛑 Advisory if any data is missing
-    missing = []
-    if st.session_state.dealer_df is None:
-        missing.append("Dealer List")
-    if st.session_state.tournament_df is None:
-        missing.append("Tournament Schedule")
-    if st.session_state.employee_df is None:
-        missing.append("Employee Schedule")
-
-    if missing:
-        st.warning(f"The following files were not uploaded: {', '.join(missing)}. Some features may be unavailable.")
+    # ---- Warning if Missing ----
+    if not st.session_state.dealer_df or not st.session_state.tournament_df:
+        missing = []
+        if not st.session_state.dealer_df:
+            missing.append("Dealer List")
+        if not st.session_state.tournament_df:
+            missing.append("Tournament Schedule")
+        st.warning(f"Missing: {', '.join(missing)}. Related features will be unavailable.")
