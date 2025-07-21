@@ -1,2 +1,45 @@
-# Excel temp files
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Jupyter and Streamlit artifacts
+.ipynb_checkpoints/
+.streamlit/config.toml
+.streamlit/secrets.toml
+
+# Excel temp lock files
 ~$*
+
+# System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment and dependency folders
+.env
+.venv/
+venv/
+env/
+build/
+dist/
+
+# VS Code workspace
+.vscode/
+
+# Logs and dumps
+*.log
+*.out
+*.dump
+
+# Temporary data and exports
+data/tmp/
+exports/
+*.bak
+
+# Secrets and credentials
+config/secrets.json
+
+# Git ignore file itself (not needed to list but added for completeness)
+.gitignore
