@@ -37,22 +37,57 @@ def show_dealer_management():
         st.markdown("### Dealer Details")
         st.dataframe(pd.DataFrame(selected_dealer).transpose())
 
-        # ---- Edit Toggle ----
-        st.markdown("#### ✏️ Edit This Dealer")
-        with st.expander("Toggle to Edit Dealer Info"):
-            updated = {}
-            for col in df.columns:
-                default = selected_dealer[col]
-                updated[col] = st.text_input(f"{col}", value=str(default))
+        # ---- 📝 Edit Section ----
+    st.markdown("#### ✏️ Edit This Dealer")
 
-            if st.button("Save Changes"):
-                # Find exact match by EE number
-                row_index = df[df["ee_number"].astype(str) == str(selected_dealer["ee_number"])].index[0]
-                for col in df.columns:
-                    df.at[row_index, col] = updated[col]
-                st.session_state.dealer_df = df
-                st.success("Dealer info updated!")
-                st.rerun()
+    with st.form("edit_dealer_form"):
+        st.markdown("**Core Info**")
+        col1, col2, col3 = st.columns(3)
+        updated_first = col1.text_input("First Name", value=selected_dealer["first_name"])
+        updated_last = col2.text_input("Last Name", value=selected_dealer["last_name"])
+        updated_ee = col3.text_input("EE Number", value=str(selected_dealer["ee_number"]))
 
-    elif search_term:
-        st.warning("No matching dealers found.")
+        col4, col5 = st.columns(2)
+        updated_nametag = col4.text_input("Nametag ID", value=selected_dealer["nametag_id"])
+        updated_email = col5.text_input("Email", value=selected_dealer["email"])
+
+        updated_phone = st.text_input("Phone", value=selected_dealer["phone"])
+
+        # ---- Smart Select Inputs ----
+        st.markdown("**Attributes**")
+        attr1, attr2, attr3 = st.columns(3)
+        updated_schedule = attr1.selectbox("Shift Type", ["DAY", "SWING"], index=0 if selected_dealer.get("schedule", "").upper() == "DAY" else 1)
+        updated_ftpt = attr2.selectbox("FT/PT", ["Full-Time", "Part-Time"], index=0 if selected_dealer.get("ft_pt", "").lower().startswith("f") else 1)
+        updated_group = attr3.selectbox("Dealer Group", ["ANY", "LIVE", "HOLDEM"], index=["ANY", "LIVE", "HOLDEM"].index(selected_dealer.get("dealer_group", "ANY").upper()))
+
+        # ---- Availability Grid ----
+        st.markdown("**Weekly Availability**")
+        days = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+        day_cols = st.columns(7)
+        avail_updates = {}
+
+        for i, day in enumerate(days):
+            field = f"AVAIL-{day}"
+            current = str(selected_dealer.get(field, "YES")).strip().upper()
+            avail_updates[field] = day_cols[i].checkbox(day, value=(current == "YES"))
+
+        # ---- Submit Button ----
+        submitted = st.form_submit_button("💾 Save Changes")
+        if submitted:
+            row_index = df[df["ee_number"].astype(str) == str(selected_dealer["ee_number"])].index[0]
+            df.at[row_index, "first_name"] = updated_first
+            df.at[row_index, "last_name"] = updated_last
+            df.at[row_index, "ee_number"] = updated_ee
+            df.at[row_index, "nametag_id"] = updated_nametag
+            df.at[row_index, "email"] = updated_email
+            df.at[row_index, "phone"] = updated_phone
+            df.at[row_index, "schedule"] = updated_schedule
+            df.at[row_index, "ft_pt"] = updated_ftpt
+            df.at[row_index, "dealer_group"] = updated_group
+
+            for field, value in avail_updates.items():
+                df.at[row_index, field] = "YES" if value else "NO"
+
+            st.session_state.dealer_df = df
+            st.success("Dealer info updated successfully!")
+            st.rerun()
