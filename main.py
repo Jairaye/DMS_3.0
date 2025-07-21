@@ -11,9 +11,11 @@ from tournament.forecast import show_forecasting
 
 st.set_page_config(page_title="Dealer Management System", layout="wide")
 
-# Initialize session state variables
+# Initialize session states
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+if "data_loaded" not in st.session_state:
+    st.session_state.data_loaded = False
 if "page" not in st.session_state:
     st.session_state.page = "Login"
 
