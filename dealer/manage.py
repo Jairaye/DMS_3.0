@@ -11,7 +11,7 @@ def show_dealer_management():
 
     df = st.session_state.dealer_df
 
-    # ---- 🔍 Lookup Section ----
+    # ---- Lookup Section ----
     st.subheader("🔍 Lookup Dealer")
     search_by = st.selectbox("Search by:", ["ee_number", "nametag_id", "first_name", "last_name"])
     search_term = st.text_input(f"Enter {search_by}:")
@@ -23,27 +23,34 @@ def show_dealer_management():
 
     if not match_df.empty:
         st.success(f"Found {len(match_df)} match{'es' if len(match_df) > 1 else ''}.")
-        selected = st.selectbox("Select a dealer to view/edit:", match_df[search_by].astype(str))
-        dealer_row = match_df[match_df[search_by].astype(str) == selected].iloc[0]
+
+        # Build unique labels
+        match_df = match_df.copy()
+        match_df["label"] = match_df.apply(
+            lambda row: f"{row['last_name']}, {row['first_name']} (EE# {row['ee_number']})", axis=1
+        )
+        selection = st.selectbox("Select a dealer to view/edit:", options=match_df["label"])
+
+        # Get full dealer row based on label
+        selected_dealer = match_df[match_df["label"] == selection].iloc[0]
 
         st.markdown("### Dealer Details")
-        st.dataframe(pd.DataFrame(dealer_row).transpose())
+        st.dataframe(pd.DataFrame(selected_dealer).transpose())
 
-        # ---- 📝 Edit Toggle ----
+        # ---- Edit Toggle ----
         st.markdown("#### ✏️ Edit This Dealer")
         with st.expander("Toggle to Edit Dealer Info"):
             updated = {}
             for col in df.columns:
-                # Skip availability and ID fields if you want—this is customizable
-                default = dealer_row[col]
+                default = selected_dealer[col]
                 updated[col] = st.text_input(f"{col}", value=str(default))
 
             if st.button("Save Changes"):
-                # Locate row in original df and update it
-                row_index = df[df[search_by].astype(str) == selected].index[0]
+                # Find exact match by EE number
+                row_index = df[df["ee_number"].astype(str) == str(selected_dealer["ee_number"])].index[0]
                 for col in df.columns:
                     df.at[row_index, col] = updated[col]
-                st.session_state.dealer_df = df  # Save back to session
+                st.session_state.dealer_df = df
                 st.success("Dealer info updated!")
                 st.rerun()
 
