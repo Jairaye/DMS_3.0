@@ -3,7 +3,7 @@ import pandas as pd
 
 # ---- HARD-CODED SCHEMA ----
 DEALER_COLUMNS = [
-    "first_name", "last_name", "nametag_id", "ee_number", "email", "phone", "schedule",
+    "first_name", "last_name", "nametag_id", "ee_number", "email", "phone", "ft_pt", "shift_type",
     "dealer_group", "AVAIL-SUN", "AVAIL-MON", "AVAIL-TUE", "AVAIL-WED",
     "AVAIL-THU", "AVAIL-FRI", "AVAIL-SAT"
 ]
@@ -73,10 +73,10 @@ def show_import_page():
     st.divider()
     if st.button("Proceed to System"):
         st.session_state.data_loaded = True
-        st.experimental_rerun()
+        st.rerun()
 
     # ---- Warning if Missing ----
-    if not st.session_state.dealer_df or not st.session_state.tournament_df:
+    if st.session_state.dealer_df is None or st.session_state.tournament_df is None:
         missing = []
         if not st.session_state.dealer_df:
             missing.append("Dealer List")
