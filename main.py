@@ -5,6 +5,8 @@ import streamlit as st
 from auth import authenticate_user
 from importer import show_import_page
 from dealer.manage import show_dealer_management
+from dealer.add import show_add_dealer
+from dealer.remove import show_remove_dealer
 from dealer.uniform import show_uniform_return
 from scheduler.shifts import show_shift_swap
 from scheduler.carpool import show_carpool_management
@@ -46,6 +48,8 @@ st.sidebar.title("🔧 Navigation")
 
 page_options = [
     "Dealer Management",
+    "Add Dealer",
+    "Remove Dealer",
     "Uniform Return",
     "Schedule Management",
     "Tournament Forecasting"
@@ -58,6 +62,12 @@ selected_page = st.sidebar.radio("Go to:", page_options)
 # ----------------------
 if selected_page == "Dealer Management":
     show_dealer_management()
+
+elif selected_page == "Add Dealer":
+    show_add_dealer()
+
+elif selected_page == "Remove Dealer":
+    show_remove_dealer()    
 
 elif selected_page == "Uniform Return":
     show_uniform_return()
