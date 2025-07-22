@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from io import BytesIO
 
 def show_uniform_return():
     st.title("👕 Uniform Return")
@@ -35,45 +34,49 @@ def show_uniform_return():
         selected_dealer = match_df[match_df["label"] == selected_label].iloc[0]
 
         row_index = df[df["ee_number"].astype(str) == str(selected_dealer["ee_number"])].index[0]
+        # 🧾 Check for prior return
+    already_returned = pd.notnull(selected_dealer.get("uniform_return_date")) and str(selected_dealer.get("uniform_return_date")).strip()
+
+    if already_returned:
+        confirm_id = selected_dealer.get("uniform_return_confirm_id", "N/A")
+        return_date = selected_dealer.get("uniform_return_date", "N/A")
+        st.success(f"✅ Shirt was already returned on {return_date} — Confirmation #{confirm_id}")
+    else:
+        with st.form("uniform_return_form"):
+            submitted = st.form_submit_button("✅ Confirm Shirt Return")
+            ...
 
         st.markdown("### Selected Dealer Info")
         col1, col2, col3 = st.columns(3)
         col1.markdown(f"**Name:** {selected_dealer['first_name']} {selected_dealer['last_name']}")
         col2.markdown(f"**EE Number:** {selected_dealer['ee_number']}")
-        col3.markdown(f"**Schedule:** {selected_dealer.get('schedule', 'N/A')}")
+        col3.markdown(f"**Shift Type:** {selected_dealer.get('shift_type', 'N/A')}")
 
-        # 🔔 Removal Flag
         removal_date = selected_dealer.get("removal_effective_date", "")
         if removal_date and str(removal_date).strip():
             st.info(f"⚠️ This dealer is marked for removal on {removal_date}.")
 
-        # 🧾 Return Form
         with st.form("uniform_return_form"):
-            return_date = st.date_input("Return Date", value=datetime.date.today())
-            uniform_items = st.multiselect("Returned Items", ["Jacket", "Pants", "Belt", "Shoes", "Other"])
-            notes = st.text_area("Additional Notes", max_chars=200)
-
-            submitted = st.form_submit_button("✅ Confirm Return")
+            submitted = st.form_submit_button("✅ Confirm Shirt Return")
 
             if submitted:
-                # Ensure columns exist
-                for col in ["uniform_return_date", "uniform_return_items", "uniform_return_confirm_id", "uniform_return_notes"]:
+                for col in ["uniform_return_date", "uniform_return_items", "uniform_return_confirm_id"]:
                     if col not in df.columns:
                         df[col] = ""
 
                 confirm_id = pd.to_datetime("now").strftime("%m%d%H%M")
+                return_date = datetime.date.today().isoformat()
 
-                df.at[row_index, "uniform_return_date"] = return_date.isoformat()
-                df.at[row_index, "uniform_return_items"] = ", ".join(uniform_items)
+                df.at[row_index, "uniform_return_date"] = return_date
+                df.at[row_index, "uniform_return_items"] = "Shirt"
                 df.at[row_index, "uniform_return_confirm_id"] = confirm_id
-                df.at[row_index, "uniform_return_notes"] = notes
 
                 st.session_state.dealer_df = df
-                st.success(f"🧾 Return confirmed — Confirmation #{confirm_id}")
+                st.success(f"🧾 Shirt return logged — Confirmation #{confirm_id}")
                 st.rerun()
 
     # -----------------------------------
-    # 📋 Missing Uniform Report
+    # 📋 Missing Shirt Return Report
     # -----------------------------------
     st.markdown("---")
     st.subheader("📝 Missing Uniform Returns")
@@ -96,14 +99,13 @@ def show_uniform_return():
     ]
 
     if missing_df.empty:
-        st.success("✅ All dealers have logged their uniform return.")
+        st.success("✅ All dealers have logged their shirt return.")
     else:
-        st.caption(f"{len(missing_df)} dealer(s) have not returned their uniform.")
+        st.caption(f"{len(missing_df)} dealer(s) have not returned their shirt.")
         st.dataframe(
-            missing_df[["first_name", "last_name", "ee_number", "schedule", "dealer_group"]],
+            missing_df[["first_name", "last_name", "ee_number", "shift_type", "dealer_group"]],
             use_container_width=True
         )
 
-        # 💾 Export Button
         csv = missing_df.to_csv(index=False).encode("utf-8")
-        st.download_button("📥 Download Report", data=csv, file_name="missing_uniform_returns.csv", mime="text/csv")
+        st.download_button("📥 Download Report", data=csv, file_name="missing_shirt_returns.csv", mime="text/csv")
