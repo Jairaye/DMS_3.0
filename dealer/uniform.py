@@ -1,11 +1,109 @@
 import streamlit as st
+import pandas as pd
+import datetime
+from io import BytesIO
 
 def show_uniform_return():
     st.title("👕 Uniform Return")
-    st.markdown("""
-    This page will eventually support:
-    - 🧾 Scanning uniform returns
-    - 🗂 Logging return dates
-    - 👮 Validating return status against dealer profiles
-    """)
-    st.info("Uniform Return stub loaded successfully!")
+
+    if "dealer_df" not in st.session_state or st.session_state.dealer_df is None:
+        st.error("Dealer list not loaded. Please upload it on the import page.")
+        return
+
+    df = st.session_state.dealer_df.copy()
+
+    # -----------------------------------
+    # 🔍 Dealer Lookup
+    # -----------------------------------
+    st.subheader("Lookup Dealer")
+    search_by = st.selectbox("Search by:", ["ee_number", "first_name", "last_name"])
+    search_term = st.text_input(f"Enter {search_by}:")
+
+    match_df = pd.DataFrame()
+    if search_term:
+        mask = df[search_by].astype(str).str.contains(search_term, case=False, na=False)
+        match_df = df[mask]
+
+    if search_term and match_df.empty:
+        st.warning("No matching dealers found.")
+
+    elif not match_df.empty:
+        match_df["label"] = match_df.apply(
+            lambda row: f"{row['last_name']}, {row['first_name']} (EE# {row['ee_number']})", axis=1
+        )
+        selected_label = st.selectbox("Select dealer:", match_df["label"])
+        selected_dealer = match_df[match_df["label"] == selected_label].iloc[0]
+
+        row_index = df[df["ee_number"].astype(str) == str(selected_dealer["ee_number"])].index[0]
+
+        st.markdown("### Selected Dealer Info")
+        col1, col2, col3 = st.columns(3)
+        col1.markdown(f"**Name:** {selected_dealer['first_name']} {selected_dealer['last_name']}")
+        col2.markdown(f"**EE Number:** {selected_dealer['ee_number']}")
+        col3.markdown(f"**Schedule:** {selected_dealer.get('schedule', 'N/A')}")
+
+        # 🔔 Removal Flag
+        removal_date = selected_dealer.get("removal_effective_date", "")
+        if removal_date and str(removal_date).strip():
+            st.info(f"⚠️ This dealer is marked for removal on {removal_date}.")
+
+        # 🧾 Return Form
+        with st.form("uniform_return_form"):
+            return_date = st.date_input("Return Date", value=datetime.date.today())
+            uniform_items = st.multiselect("Returned Items", ["Jacket", "Pants", "Belt", "Shoes", "Other"])
+            notes = st.text_area("Additional Notes", max_chars=200)
+
+            submitted = st.form_submit_button("✅ Confirm Return")
+
+            if submitted:
+                # Ensure columns exist
+                for col in ["uniform_return_date", "uniform_return_items", "uniform_return_confirm_id", "uniform_return_notes"]:
+                    if col not in df.columns:
+                        df[col] = ""
+
+                confirm_id = pd.to_datetime("now").strftime("%m%d%H%M")
+
+                df.at[row_index, "uniform_return_date"] = return_date.isoformat()
+                df.at[row_index, "uniform_return_items"] = ", ".join(uniform_items)
+                df.at[row_index, "uniform_return_confirm_id"] = confirm_id
+                df.at[row_index, "uniform_return_notes"] = notes
+
+                st.session_state.dealer_df = df
+                st.success(f"🧾 Return confirmed — Confirmation #{confirm_id}")
+                st.rerun()
+
+    # -----------------------------------
+    # 📋 Missing Uniform Report
+    # -----------------------------------
+    st.markdown("---")
+    st.subheader("📝 Missing Uniform Returns")
+
+    show_removed = st.checkbox("Include removed dealers", value=False)
+
+    report_df = st.session_state.dealer_df.copy()
+
+    if not show_removed and "removal_effective_date" in report_df.columns:
+        report_df = report_df[report_df["removal_effective_date"].isna()]
+
+    if "uniform_return_date" not in report_df.columns:
+        report_df["uniform_return_date"] = ""
+    if "uniform_return_items" not in report_df.columns:
+        report_df["uniform_return_items"] = ""
+
+    missing_df = report_df[
+        (report_df["uniform_return_date"] == "") &
+        (report_df["uniform_return_items"] == "")
+    ]
+
+    if missing_df.empty:
+        st.success("✅ All dealers have logged their uniform return.")
+    else:
+        st.caption(f"{len(missing_df)} dealer(s) have not returned their uniform.")
+        st.dataframe(
+            missing_df[["first_name", "last_name", "ee_number", "schedule", "dealer_group"]],
+            use_container_width=True
+        )
+
+        # 💾 Export Button
+        csv = missing_df.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Download Report", data=csv, file_name="missing_uniform_returns.csv", mime="text/csv")
