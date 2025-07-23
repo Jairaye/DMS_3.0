@@ -1,0 +1,5 @@
+streamlit>=1.25
+pandas
+openpyxl
+numpy
+python-dateutil
