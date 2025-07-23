@@ -14,7 +14,6 @@ def show_tournament_manage():
     df = st.session_state.tournament_df.copy()
     df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
 
-    # 📅 Date & Time parsing
     if df["date"].dtype != "datetime64[ns]":
         df["date"] = pd.to_datetime(df["date"], unit="D", origin="1899-12-30")
 
@@ -27,7 +26,6 @@ def show_tournament_manage():
     df["time"] = df["time"].apply(safe_parse_time)
     df["projection"] = pd.to_numeric(df["projection"], errors="coerce")
 
-    # 🧬 Game Type tagging
     def classify_game(name):
         name = str(name).lower()
         mixed_tags = [
@@ -40,7 +38,6 @@ def show_tournament_manage():
 
     df["game_type"] = df["event_name"].apply(classify_game)
 
-    # ✋ Detect handedness
     def detect_handedness(row):
         name = str(row["event_name"]).lower()
         if "6-handed" in name or "6 max" in name:
@@ -55,7 +52,6 @@ def show_tournament_manage():
 
     df["handedness"] = df.apply(detect_handedness, axis=1)
 
-    # 🧮 Forecast dealers
     def forecast_dealers(projection, handedness):
         if pd.isnull(projection) or pd.isnull(handedness):
             return None
@@ -67,7 +63,6 @@ def show_tournament_manage():
         axis=1
     )
 
-    # 🔁 Restart detection via event number repetition or suffix
     df["event_number_str"] = df["event_number"].astype(str).str.strip()
 
     def base_event(ev):
@@ -78,33 +73,14 @@ def show_tournament_manage():
     base_counts = df["event_base"].value_counts()
     df["is_restart"] = df["event_base"].apply(lambda x: base_counts.get(x, 0) > 1)
 
-    # 🗂 Tabbed View
-    tab1, tab2 = st.tabs(["🔵 Single-Day Events", "🔁 Restart Events"])
+    tab1, tab2 = st.tabs(["🔵 Single-Day Events", "↻ Restart Events"])
 
-    # 🔵 Tab 1: Regular Events
-    with tab1:
-        single_df = df[df["is_restart"] == False]
-        available_dates = sorted(single_df["date"].dt.date.dropna().unique())
+    def editable_table_view(dataframe, editable_cols, key_prefix):
+        edit_mode = st.toggle("Edit Projections", key=f"{key_prefix}_edit_toggle")
 
-        if available_dates:
-            selected_day = st.date_input(
-                "📅 Select Tournament Day",
-                value=available_dates[0],
-                min_value=available_dates[0],
-                max_value=available_dates[-1],
-                key="date_picker_single"
-            )
-
-            day_df = single_df[single_df["date"].dt.date == selected_day]
-            st.subheader(f"📋 Events on {selected_day.strftime('%A, %B %d, %Y')}")
-
-            editable_cols = [
-                "time", "event_number", "event_name", "buy-in_amount",
-                "projection", "dealer_projection", "game_type"
-            ]
-
+        if edit_mode:
             edited_df = st.data_editor(
-                day_df[editable_cols],
+                dataframe[editable_cols],
                 column_config={
                     "projection": st.column_config.NumberColumn(disabled=False),
                     "dealer_projection": st.column_config.NumberColumn(disabled=True),
@@ -116,19 +92,46 @@ def show_tournament_manage():
                 },
                 num_rows="dynamic",
                 use_container_width=True,
-                key=f"editor_single_{selected_day}"
+                key=f"editor_{key_prefix}"
             )
 
-            day_df.update(edited_df)
-            day_df["projection"] = pd.to_numeric(day_df["projection"], errors="coerce")
-            day_df["dealer_projection"] = day_df.apply(
-                lambda row: forecast_dealers(row["projection"], row["handedness"]),
-                axis=1
+            if st.button("Save and Recalculate", key=f"save_btn_{key_prefix}"):
+                dataframe.loc[edited_df.index, "projection"] = edited_df["projection"]
+                dataframe["projection"] = pd.to_numeric(dataframe["projection"], errors="coerce")
+                dataframe["dealer_projection"] = dataframe.apply(
+                    lambda row: forecast_dealers(row["projection"], row["handedness"]), axis=1
+                )
+                st.success("Updated projections and dealer estimates.")
+        else:
+            st.dataframe(dataframe[editable_cols], use_container_width=True)
+
+        return dataframe
+
+    with tab1:
+        single_df = df[df["is_restart"] == False]
+        available_dates = sorted(single_df["date"].dt.date.dropna().unique())
+
+        if available_dates:
+            selected_day = st.date_input(
+                "Select Tournament Day",
+                value=available_dates[0],
+                min_value=available_dates[0],
+                max_value=available_dates[-1],
+                key="date_picker_single"
             )
 
+            day_df = single_df[single_df["date"].dt.date == selected_day]
+            st.subheader(f"Events on {selected_day.strftime('%A, %B %d, %Y')}")
+
+            editable_cols = [
+                "time", "event_number", "event_name", "buy-in_amount",
+                "projection", "dealer_projection", "game_type"
+            ]
+
+            day_df = editable_table_view(day_df, editable_cols, f"single_{selected_day}")
             df.update(day_df)
 
-            st.markdown("### 🔵 7-Day Regular Dealer Projection Summary")
+            st.markdown("### 7-Day Regular Dealer Projection Summary")
             summary_days = [selected_day + datetime.timedelta(days=i) for i in range(7)]
             summary_data = []
             for day in summary_days:
@@ -142,14 +145,13 @@ def show_tournament_manage():
         else:
             st.warning("No single-day tournament dates available.")
 
-    # 🔁 Tab 2: Restart Events
     with tab2:
         restart_df = df[df["is_restart"] == True]
         restart_dates = sorted(restart_df["date"].dt.date.dropna().unique())
 
         if restart_dates:
             selected_day_restart = st.date_input(
-                "📅 Select Tournament Day",
+                "Select Tournament Day",
                 value=restart_dates[0],
                 min_value=restart_dates[0],
                 max_value=restart_dates[-1],
@@ -157,39 +159,17 @@ def show_tournament_manage():
             )
 
             day_df = restart_df[restart_df["date"].dt.date == selected_day_restart]
-            st.subheader(f"📋 Restart Events on {selected_day_restart.strftime('%A, %B %d, %Y')}")
+            st.subheader(f"Restart Events on {selected_day_restart.strftime('%A, %B %d, %Y')}")
 
             editable_cols = [
                 "time", "event_number", "event_name", "buy-in_amount",
                 "projection", "dealer_projection", "game_type"
             ]
 
-            edited_df = st.data_editor(
-                day_df[editable_cols],
-                column_config={
-                    "projection": st.column_config.NumberColumn(disabled=False),
-                    "dealer_projection": st.column_config.NumberColumn(disabled=True),
-                    "time": st.column_config.TimeColumn(disabled=True),
-                    "event_number": st.column_config.TextColumn(disabled=True),
-                    "event_name": st.column_config.TextColumn(disabled=True),
-                    "buy-in_amount": st.column_config.NumberColumn(disabled=True),
-                    "game_type": st.column_config.TextColumn(disabled=True)
-                },
-                num_rows="dynamic",
-                use_container_width=True,
-                key=f"editor_restart_{selected_day_restart}"
-            )
-
-            day_df.update(edited_df)
-            day_df["projection"] = pd.to_numeric(day_df["projection"], errors="coerce")
-            day_df["dealer_projection"] = day_df.apply(
-                lambda row: forecast_dealers(row["projection"], row["handedness"]),
-                axis=1
-            )
-
+            day_df = editable_table_view(day_df, editable_cols, f"restart_{selected_day_restart}")
             df.update(day_df)
 
-            st.markdown("### 🔁 7-Day Restart Dealer Projection Summary")
+            st.markdown("### 7-Day Restart Dealer Projection Summary")
             summary_days = [selected_day_restart + datetime.timedelta(days=i) for i in range(7)]
             summary_data = []
             for day in summary_days:
@@ -202,3 +182,5 @@ def show_tournament_manage():
             st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
         else:
             st.warning("No restart tournament dates available.")
+
+    st.session_state.tournament_df = df
