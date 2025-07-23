@@ -11,7 +11,7 @@ from dealer.uniform import show_uniform_return
 from scheduler.shifts import show_shift_swap
 from scheduler.carpool import show_carpool_management
 from scheduler.temp_adjustments import show_temp_adjustments
-from tournament.forecast import show_forecasting
+from tournament.manage import show_tournament_manage
 
 # ----------------------
 # 🧭 Streamlit Config
@@ -52,7 +52,7 @@ page_options = [
     "Remove Dealer",
     "Uniform Return",
     "Schedule Management",
-    "Tournament Forecasting"
+    "Tournament Management"
 ]
 
 selected_page = st.sidebar.radio("Go to:", page_options)
@@ -83,5 +83,5 @@ elif selected_page == "Schedule Management":
     else:
         show_temp_adjustments()
 
-elif selected_page == "Tournament Forecasting":
-    show_forecasting()
+elif selected_page == "Tournament Management":
+    show_tournament_manage()
