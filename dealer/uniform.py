@@ -34,46 +34,42 @@ def show_uniform_return():
         selected_dealer = match_df[match_df["label"] == selected_label].iloc[0]
 
         row_index = df[df["ee_number"].astype(str) == str(selected_dealer["ee_number"])].index[0]
-        # 🧾 Check for prior return
-    already_returned = pd.notnull(selected_dealer.get("uniform_return_date")) and str(selected_dealer.get("uniform_return_date")).strip()
+        already_returned = pd.notnull(selected_dealer.get("uniform_return_date")) and str(selected_dealer.get("uniform_return_date")).strip()
 
-    if already_returned:
-        confirm_id = selected_dealer.get("uniform_return_confirm_id", "N/A")
-        return_date = selected_dealer.get("uniform_return_date", "N/A")
-        st.success(f"✅ Shirt was already returned on {return_date} — Confirmation #{confirm_id}")
-    else:
-        with st.form("uniform_return_form"):
-            submitted = st.form_submit_button("✅ Confirm Shirt Return")
-            ...
+        if already_returned:
+            confirm_id = selected_dealer.get("uniform_return_confirm_id", "N/A")
+            return_date = selected_dealer.get("uniform_return_date", "N/A")
+            st.success(f"✅ Shirt was already returned on {return_date} — Confirmation #{confirm_id}")
+        else:
+            st.markdown("### Selected Dealer Info")
+            col1, col2, col3 = st.columns(3)
+            col1.markdown(f"**Name:** {selected_dealer['first_name']} {selected_dealer['last_name']}")
+            col2.markdown(f"**EE Number:** {selected_dealer['ee_number']}")
+            col3.markdown(f"**Shift Type:** {selected_dealer.get('shift_type', 'N/A')}")
 
-        st.markdown("### Selected Dealer Info")
-        col1, col2, col3 = st.columns(3)
-        col1.markdown(f"**Name:** {selected_dealer['first_name']} {selected_dealer['last_name']}")
-        col2.markdown(f"**EE Number:** {selected_dealer['ee_number']}")
-        col3.markdown(f"**Shift Type:** {selected_dealer.get('shift_type', 'N/A')}")
+            removal_date = selected_dealer.get("removal_effective_date", "")
+            if removal_date and str(removal_date).strip():
+                st.info(f"⚠️ This dealer is marked for removal on {removal_date}.")
 
-        removal_date = selected_dealer.get("removal_effective_date", "")
-        if removal_date and str(removal_date).strip():
-            st.info(f"⚠️ This dealer is marked for removal on {removal_date}.")
+            # ✅ Return Form with unique key
+            form_key = f"uniform_return_form_{selected_dealer['ee_number']}"
+            with st.form(key=form_key):
+                submitted = st.form_submit_button("✅ Confirm Shirt Return")
+                if submitted:
+                    for col in ["uniform_return_date", "uniform_return_items", "uniform_return_confirm_id"]:
+                        if col not in df.columns:
+                            df[col] = ""
 
-        with st.form("uniform_return_form"):
-            submitted = st.form_submit_button("✅ Confirm Shirt Return")
+                    confirm_id = pd.to_datetime("now").strftime("%m%d%H%M")
+                    return_date = datetime.date.today().isoformat()
 
-            if submitted:
-                for col in ["uniform_return_date", "uniform_return_items", "uniform_return_confirm_id"]:
-                    if col not in df.columns:
-                        df[col] = ""
+                    df.at[row_index, "uniform_return_date"] = return_date
+                    df.at[row_index, "uniform_return_items"] = "Shirt"
+                    df.at[row_index, "uniform_return_confirm_id"] = confirm_id
 
-                confirm_id = pd.to_datetime("now").strftime("%m%d%H%M")
-                return_date = datetime.date.today().isoformat()
-
-                df.at[row_index, "uniform_return_date"] = return_date
-                df.at[row_index, "uniform_return_items"] = "Shirt"
-                df.at[row_index, "uniform_return_confirm_id"] = confirm_id
-
-                st.session_state.dealer_df = df
-                st.success(f"🧾 Shirt return logged — Confirmation #{confirm_id}")
-                st.rerun()
+                    st.session_state.dealer_df = df
+                    st.success(f"🧾 Shirt return logged — Confirmation #{confirm_id}")
+                    st.rerun()
 
     # -----------------------------------
     # 📋 Missing Shirt Return Report
@@ -82,16 +78,14 @@ def show_uniform_return():
     st.subheader("📝 Missing Uniform Returns")
 
     show_removed = st.checkbox("Include removed dealers", value=False)
-
     report_df = st.session_state.dealer_df.copy()
 
     if not show_removed and "removal_effective_date" in report_df.columns:
         report_df = report_df[report_df["removal_effective_date"].isna()]
 
-    if "uniform_return_date" not in report_df.columns:
-        report_df["uniform_return_date"] = ""
-    if "uniform_return_items" not in report_df.columns:
-        report_df["uniform_return_items"] = ""
+    for col in ["uniform_return_date", "uniform_return_items"]:
+        if col not in report_df.columns:
+            report_df[col] = ""
 
     missing_df = report_df[
         (report_df["uniform_return_date"] == "") &
@@ -106,6 +100,5 @@ def show_uniform_return():
             missing_df[["first_name", "last_name", "ee_number", "shift_type", "dealer_group"]],
             use_container_width=True
         )
-
         csv = missing_df.to_csv(index=False).encode("utf-8")
         st.download_button("📥 Download Report", data=csv, file_name="missing_shirt_returns.csv", mime="text/csv")

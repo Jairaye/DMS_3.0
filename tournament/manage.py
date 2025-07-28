@@ -95,7 +95,7 @@ def show_tournament_manage():
                 key=f"editor_{key_prefix}"
             )
 
-            if st.button("Save and Recalculate", key=f"save_btn_{key_prefix}"):
+            if st.button("Save and Recalculate - Press Twice To View Results", key=f"save_btn_{key_prefix}"):
                 dataframe.loc[edited_df.index, "projection"] = edited_df["projection"]
                 dataframe["projection"] = pd.to_numeric(dataframe["projection"], errors="coerce")
                 dataframe["dealer_projection"] = dataframe.apply(
