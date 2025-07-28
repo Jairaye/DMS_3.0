@@ -12,6 +12,7 @@ from scheduler.shifts import show_shift_swap
 from scheduler.carpool import show_carpool_management
 from scheduler.temp_adjustments import show_temp_adjustments
 from tournament.manage import show_tournament_manage
+from scheduler.metrics import show_scheduling_metrics
 
 # ----------------------
 # 🧭 Streamlit Config
@@ -52,7 +53,8 @@ page_options = [
     "Remove Dealer",
     "Uniform Return",
     "Schedule Management",
-    "Tournament Management"
+    "Tournament Management",
+    "Scheduling Metrics"
 ]
 
 selected_page = st.sidebar.radio("Go to:", page_options)
@@ -85,3 +87,7 @@ elif selected_page == "Schedule Management":
 
 elif selected_page == "Tournament Management":
     show_tournament_manage()
+
+elif selected_page == "Scheduling Metrics":
+    from scheduler.metrics import show_scheduling_metrics
+    show_scheduling_metrics()    
