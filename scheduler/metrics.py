@@ -1,5 +1,45 @@
 import streamlit as st
 import pandas as pd
+import calendar
+from datetime import datetime
+
+
+def show_calendar_view(daily_df, value_col):
+    st.subheader("🗓 Monthly Calendar View")
+
+    daily_df["Day"] = pd.to_datetime(daily_df["Day"])
+    selected_month = st.selectbox(
+        "Select Month:",
+        sorted(set(daily_df["Day"].dt.strftime("%B %Y")))
+    )
+
+    dt_filter = datetime.strptime(selected_month, "%B %Y")
+    month_df = daily_df[daily_df["Day"].dt.month == dt_filter.month]
+
+    days_in_month = calendar.monthrange(dt_filter.year, dt_filter.month)[1]
+    start_padding = calendar.monthrange(dt_filter.year, dt_filter.month)[0]
+    calendar_data = [""] * start_padding
+
+    for day in range(1, days_in_month + 1):
+        d = datetime(dt_filter.year, dt_filter.month, day)
+        val = month_df[month_df["Day"] == d][value_col].sum()
+        if val != 0:
+            val_int = int(round(val))
+            display = f"**{day}**\n{val_int}"
+        else:
+            display = f"**{day}**"
+        calendar_data.append(display)
+
+    weeks = [calendar_data[i:i + 7] for i in range(0, len(calendar_data), 7)]
+    for week in weeks:
+        cols = st.columns(7)
+        for idx, day_val in enumerate(week):
+            with cols[idx]:
+                st.markdown(
+                    f"<div style='text-align: center; padding: 10px; background-color: #f0f2f6; border-radius: 6px; font-size: 14px;'>{day_val}</div>",
+                    unsafe_allow_html=True
+                )
+
 
 def show_scheduling_metrics():
     st.title("📊 Scheduling Metrics")
@@ -25,14 +65,15 @@ def show_scheduling_metrics():
 
     if view_type == "Single-Day":
         single_df = df[df["is_restart"] == False]
-        weekly = single_df.groupby(["week", df["date"].dt.date])["dealer_projection"].sum().reset_index()
+        weekly = single_df.groupby(["week", single_df["date"].dt.date])["dealer_projection"].sum().reset_index()
         weekly.columns = ["Week", "Day", "Projected Dealers"]
         st.dataframe(weekly, use_container_width=True)
+        show_calendar_view(weekly, "Projected Dealers")
 
-    else:  # 🔁 Restart taper logic
+    else:
         restart_df = df[df["is_restart"] == True].copy()
         restart_df = restart_df.sort_values("date")
-        taper_factors = [1.0, 0.6, 0.6, 0.55]
+        taper_factors = [1.0, 0.5, 0.3, 0.1]
 
         def apply_taper(group):
             group = group.copy()
@@ -48,6 +89,7 @@ def show_scheduling_metrics():
         weekly = grouped.groupby(["week", grouped["date"].dt.date])["adjusted_dealer_projection"].sum().reset_index()
         weekly.columns = ["Week", "Day", "Adjusted Dealers"]
         st.dataframe(weekly, use_container_width=True)
+        show_calendar_view(weekly, "Adjusted Dealers")
 
     st.markdown("---")
     st.caption("Dealer projections are based on current tournament data and restart taper assumptions.")
