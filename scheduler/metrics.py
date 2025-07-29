@@ -2,17 +2,24 @@ import streamlit as st
 import pandas as pd
 import calendar
 from datetime import datetime
+import os
+
+
+def format_date(d):
+    fmt = '%-m/%-d' if os.name != 'nt' else '%m/%d'
+    return d.strftime(fmt)
 
 
 def show_calendar_view(daily_df, value_col):
     st.subheader("🗓 Monthly Calendar View")
 
     daily_df["Day"] = pd.to_datetime(daily_df["Day"])
-    selected_month = st.selectbox(
-        "Select Month:",
-        sorted(set(daily_df["Day"].dt.strftime("%B %Y")))
-    )
+    month_options = sorted(set(daily_df["Day"].dt.strftime("%B %Y")))
+    if not month_options:
+        st.warning("No valid dates found for calendar view.")
+        return
 
+    selected_month = st.selectbox("Select Month:", month_options, index=0)
     dt_filter = datetime.strptime(selected_month, "%B %Y")
     month_df = daily_df[daily_df["Day"].dt.month == dt_filter.month]
 
@@ -41,6 +48,110 @@ def show_calendar_view(daily_df, value_col):
                 )
 
 
+def show_summary_metrics(daily_df, value_col):
+    st.subheader("🔍 Summary Stats")
+
+    if daily_df.empty:
+        st.info("No data for selected time window.")
+        return
+
+    df = daily_df.copy()
+    df["Day"] = pd.to_datetime(df["Day"])
+
+    avg = df[value_col].mean()
+    max_row = df.loc[df[value_col].idxmax()]
+    min_row = df.loc[df[value_col].idxmin()]
+
+    df["week_num"] = df["Day"].dt.isocalendar().week
+    week_groups = df.groupby("week_num")
+
+    def get_week_range(g):
+        days = sorted(g["Day"])
+        if len(days) == 0:
+            return "N/A"
+        return f"{format_date(days[0])}–{format_date(days[-1])}"
+
+    weekly_sums = week_groups[value_col].sum()
+    busiest_week_num = weekly_sums.idxmax()
+    lightest_week_num = weekly_sums.idxmin()
+
+    busiest_label = get_week_range(week_groups.get_group(busiest_week_num))
+    lightest_label = get_week_range(week_groups.get_group(lightest_week_num))
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("📊 Average Dealers per Day", f"{avg:.1f}")
+        st.metric("📈 Busiest Week", f"{busiest_label} ({int(weekly_sums[busiest_week_num])})")
+        st.metric("📉 Lightest Week", f"{lightest_label} ({int(weekly_sums[lightest_week_num])})")
+
+    with col2:
+        st.metric("🔺 Max Day", f"{max_row['Day'].strftime('%b %d')} ({int(max_row[value_col])})")
+        st.metric("🔻 Min Day", f"{min_row['Day'].strftime('%b %d')} ({int(min_row[value_col])})")
+
+
+def show_single_day_metrics(df):
+    st.subheader("🗓 Single-Day Scheduling Metrics")
+
+    df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
+
+    if "date" not in df.columns or "time" not in df.columns or "projection" not in df.columns:
+        st.warning("Missing required columns: date, time, projection")
+        return
+
+    df["is_restart"] = df["event_number"].astype(str).str.contains("r", case=False)
+    single_df = df[df["is_restart"] == False].copy()
+
+    shift = st.radio("Time Window:", ["Total", "Day Shift", "Swing Shift"])
+    single_df["start_hour"] = pd.to_datetime(single_df["time"], format="%H:%M:%S", errors="coerce").dt.hour
+
+    if shift == "Day Shift":
+        single_df = single_df[single_df["start_hour"].between(7, 14)]
+    elif shift == "Swing Shift":
+        single_df = single_df[single_df["start_hour"].between(15, 21)]
+
+    single_df["Day"] = pd.to_datetime(single_df["date"]).dt.date
+    single_df["Week"] = pd.to_datetime(single_df["date"]).dt.isocalendar().week
+
+    weekly = single_df.groupby(["Week", "Day"])["dealer_projection"].sum().reset_index()
+    weekly.columns = ["Week", "Day", "Projected Dealers"]
+
+    st.dataframe(weekly, use_container_width=True)
+    show_calendar_view(weekly, "Projected Dealers")
+    show_summary_metrics(weekly, "Projected Dealers")
+
+
+def show_restart_metrics(df):
+    st.subheader("🔁 Restart Scheduling Metrics")
+
+    df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
+
+    if "date" not in df.columns or "event_number" not in df.columns or "dealer_projection" not in df.columns:
+        st.warning("Missing required columns for restart metrics.")
+        return
+
+    # Identify restart rows
+    df["is_restart"] = df["event_number"].astype(str).str.contains("r", case=False)
+    restart_df = df[df["is_restart"] == True].copy()
+
+    # Optional: Add filters for finalized restarts and hidden ones
+    restart_df = restart_df[
+        (restart_df["restart_hidden"] != True) &
+        (restart_df["status"].str.lower() == "finalized")
+    ]
+
+    restart_df["Day"] = pd.to_datetime(restart_df["date"]).dt.date
+    restart_df["Week"] = pd.to_datetime(restart_df["date"]).dt.isocalendar().week
+
+    weekly = restart_df.groupby(["Week", "Day"])["dealer_projection"].sum().reset_index()
+    weekly.columns = ["Week", "Day", "Restart Dealer Load"]
+
+    st.dataframe(weekly, use_container_width=True)
+    show_summary_metrics(weekly, "Restart Dealer Load")
+
+    # Optional: calendar view, if you'd like to visualize taper
+    # show_calendar_view(weekly, "Restart Dealer Load")
+
+
 def show_scheduling_metrics():
     st.title("📊 Scheduling Metrics")
 
@@ -49,58 +160,12 @@ def show_scheduling_metrics():
         return
 
     df = st.session_state.tournament_df.copy()
-    df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
 
-    if "date" not in df.columns or "dealer_projection" not in df.columns:
-        st.warning("Tournament data missing required columns.")
-        return
-
-    # 🗂 Split regular and restart events
-    df["is_restart"] = df["event_number"].astype(str).str.contains("R", case=False)
-    df["week"] = df["date"].dt.isocalendar().week
-
-    st.subheader("📅 Weekly Dealer Forecast")
-
-    view_type = st.radio("Event Type:", ["Single-Day", "Restart"])
-
-    if view_type == "Single-Day":
-        single_df = df[df["is_restart"] == False].copy()
-        time_window = st.radio("Time Window:", ["Total", "Day Shift", "Swing Shift"])
-
-        # Extract start hour
-        if "start_time" in single_df.columns:
-            single_df["start_hour"] = pd.to_datetime(single_df["start_time"], errors="coerce").dt.hour
-
-            if time_window == "Day Shift":
-                single_df = single_df[single_df["start_hour"].between(7, 14)]
-            elif time_window == "Swing Shift":
-                single_df = single_df[single_df["start_hour"].between(15, 21)]
-
-        weekly = single_df.groupby(["week", single_df["date"].dt.date])["dealer_projection"].sum().reset_index()
-        weekly.columns = ["Week", "Day", "Projected Dealers"]
-        st.dataframe(weekly, use_container_width=True)
-        show_calendar_view(weekly, "Projected Dealers")
-
-    else:
-        restart_df = df[df["is_restart"] == True].copy()
-        restart_df = restart_df.sort_values("date")
-        taper_factors = [1.0, 0.5, 0.3, 0.1]
-
-        def apply_taper(group):
-            group = group.copy()
-            for i in range(len(group)):
-                factor = taper_factors[min(i, len(taper_factors) - 1)]
-                group.iloc[i, group.columns.get_loc("dealer_projection")] *= factor
-            return group
-
-        restart_df["event_base"] = restart_df["event_number"].str.extract(r"(\d+)")
-        grouped = restart_df.groupby("event_base", group_keys=False).apply(apply_taper)
-        grouped["adjusted_dealer_projection"] = grouped["dealer_projection"].round().astype(int)
-
-        weekly = grouped.groupby(["week", grouped["date"].dt.date])["adjusted_dealer_projection"].sum().reset_index()
-        weekly.columns = ["Week", "Day", "Adjusted Dealers"]
-        st.dataframe(weekly, use_container_width=True)
-        show_calendar_view(weekly, "Adjusted Dealers")
+    tab1, tab2 = st.tabs(["Single-Day Metrics", "Restart Metrics"])
+    with tab1:
+        show_single_day_metrics(df)
+    with tab2:
+        show_restart_metrics(df)
 
     st.markdown("---")
-    st.caption("Dealer projections are based on current tournament data and restart taper assumptions.")
+    st.caption("Dealer projections are based on current tournament data and scheduling assumptions.")
