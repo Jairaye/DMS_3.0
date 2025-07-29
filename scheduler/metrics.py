@@ -64,7 +64,18 @@ def show_scheduling_metrics():
     view_type = st.radio("Event Type:", ["Single-Day", "Restart"])
 
     if view_type == "Single-Day":
-        single_df = df[df["is_restart"] == False]
+        single_df = df[df["is_restart"] == False].copy()
+        time_window = st.radio("Time Window:", ["Total", "Day Shift", "Swing Shift"])
+
+        # Extract start hour
+        if "start_time" in single_df.columns:
+            single_df["start_hour"] = pd.to_datetime(single_df["start_time"], errors="coerce").dt.hour
+
+            if time_window == "Day Shift":
+                single_df = single_df[single_df["start_hour"].between(7, 14)]
+            elif time_window == "Swing Shift":
+                single_df = single_df[single_df["start_hour"].between(15, 21)]
+
         weekly = single_df.groupby(["week", single_df["date"].dt.date])["dealer_projection"].sum().reset_index()
         weekly.columns = ["Week", "Day", "Projected Dealers"]
         st.dataframe(weekly, use_container_width=True)
