@@ -3,6 +3,7 @@ import pandas as pd
 import calendar
 from datetime import datetime
 import os
+import re
 
 
 def format_date(d):
@@ -129,15 +130,18 @@ def show_restart_metrics(df):
         st.warning("Missing required columns for restart metrics.")
         return
 
-    # Identify restart rows
-    df["is_restart"] = df["event_number"].astype(str).str.contains("r", case=False)
-    restart_df = df[df["is_restart"] == True].copy()
+    # Use base event logic to identify restarts
+    df["event_number_str"] = df["event_number"].astype(str).str.strip()
 
-    # Optional: Add filters for finalized restarts and hidden ones
-    restart_df = restart_df[
-        (restart_df["restart_hidden"] != True) &
-        (restart_df["status"].str.lower() == "finalized")
-    ]
+    def base_event(ev):
+        match = re.match(r"(\d+)", str(ev).strip())
+        return match.group(1) if match else str(ev).strip()
+
+    df["event_base"] = df["event_number_str"].apply(base_event)
+    base_counts = df["event_base"].value_counts()
+    df["is_restart"] = df["event_base"].apply(lambda x: base_counts.get(x, 0) > 1)
+
+    restart_df = df[df["is_restart"] == True].copy()
 
     restart_df["Day"] = pd.to_datetime(restart_df["date"]).dt.date
     restart_df["Week"] = pd.to_datetime(restart_df["date"]).dt.isocalendar().week
@@ -148,8 +152,29 @@ def show_restart_metrics(df):
     st.dataframe(weekly, use_container_width=True)
     show_summary_metrics(weekly, "Restart Dealer Load")
 
-    # Optional: calendar view, if you'd like to visualize taper
-    # show_calendar_view(weekly, "Restart Dealer Load")
+    st.markdown("### 🔍 Restart Lineage Explorer")
+
+    # Step 1: Get all base events with restarts
+    restart_df["event_number_str"] = restart_df["event_number"].astype(str).str.strip()
+
+    def base_event(ev):
+        match = re.match(r"(\d+)", str(ev).strip())
+        return match.group(1) if match else str(ev).strip()
+
+    restart_df["event_base"] = restart_df["event_number_str"].apply(base_event)
+    base_events = sorted(restart_df["event_base"].unique())
+
+    selected_base = st.selectbox("Select Base Event Number:", base_events)
+
+    lineage_df = df[df["event_base"] == selected_base].copy()
+    lineage_df["Day"] = pd.to_datetime(lineage_df["date"]).dt.date
+    lineage_df = lineage_df.sort_values("date")
+
+    st.markdown(f"#### Events for Base `{selected_base}`")
+    display_cols = [
+        "Day", "time", "event_number", "event_name", "projection", "dealer_projection", "game_type"
+    ]
+    st.dataframe(lineage_df[display_cols], use_container_width=True)
 
 
 def show_scheduling_metrics():
