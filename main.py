@@ -13,6 +13,7 @@ from scheduler.carpool import show_carpool_management
 from scheduler.temp_adjustments import show_temp_adjustments
 from tournament.manage import show_tournament_manage
 from scheduler.metrics import show_scheduling_metrics
+from schedule import run_schedule_builder  # ✅ New import
 
 # ----------------------
 # 🧭 Streamlit Config
@@ -23,10 +24,10 @@ st.set_page_config(page_title="Dealer Management System", layout="wide")
 # 🧠 Session Initialization
 # ----------------------
 if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False  # Tracks login status
+    st.session_state.authenticated = False
 
 if "data_loaded" not in st.session_state:
-    st.session_state.data_loaded = False  # Tracks import/setup status
+    st.session_state.data_loaded = False
 
 # ----------------------
 # 🔐 Phase 1: Login Page
@@ -54,7 +55,8 @@ page_options = [
     "Uniform Return",
     "Schedule Management",
     "Tournament Management",
-    "Scheduling Metrics"
+    "Scheduling Metrics",
+    "Schedule Generation"  # ✅ Added missing comma above
 ]
 
 selected_page = st.sidebar.radio("Go to:", page_options)
@@ -69,7 +71,7 @@ elif selected_page == "Add Dealer":
     show_add_dealer()
 
 elif selected_page == "Remove Dealer":
-    show_remove_dealer()    
+    show_remove_dealer()
 
 elif selected_page == "Uniform Return":
     show_uniform_return()
@@ -89,5 +91,7 @@ elif selected_page == "Tournament Management":
     show_tournament_manage()
 
 elif selected_page == "Scheduling Metrics":
-    from scheduler.metrics import show_scheduling_metrics
-    show_scheduling_metrics()    
+    show_scheduling_metrics()
+
+elif selected_page == "Schedule Generation":  # ✅ New route
+    run_schedule_builder()
