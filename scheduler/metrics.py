@@ -1,18 +1,36 @@
 import streamlit as st
 import pandas as pd
 import calendar
-from datetime import datetime
+from datetime import datetime, time  # Include time
 import os
 import re
 
+# ---- Time Parsing ----
+def parse_time(val):
+    if isinstance(val, str) and "TBD" not in val.upper():
+        try:
+            return pd.to_datetime(val, format="%I:%M %p")
+        except Exception:
+            return pd.NaT
+    elif isinstance(val, time):
+        return pd.Timestamp.combine(pd.Timestamp("1900-01-01"), val)
+    elif isinstance(val, pd.Timestamp):
+        return val
+    else:
+        return pd.NaT
 
+# ---- Date Formatting ----
 def format_date(d):
     fmt = '%-m/%-d' if os.name != 'nt' else '%m/%d'
     return d.strftime(fmt)
 
-
+# ---- Calendar View ----
 def show_calendar_view(daily_df, value_col):
     st.subheader("🗓 Monthly Calendar View")
+
+    if daily_df.empty or "Day" not in daily_df.columns:
+        st.warning("No valid dates found for calendar view.")
+        return
 
     daily_df["Day"] = pd.to_datetime(daily_df["Day"])
     month_options = sorted(set(daily_df["Day"].dt.strftime("%B %Y")))
@@ -30,7 +48,7 @@ def show_calendar_view(daily_df, value_col):
 
     for day in range(1, days_in_month + 1):
         d = datetime(dt_filter.year, dt_filter.month, day)
-        val = month_df[month_df["Day"] == d][value_col].sum()
+        val = month_df[month_df["Day"].dt.date == d.date()][value_col].sum()
         if val != 0:
             val_int = int(round(val))
             display = f"**{day}**\n{val_int}"
@@ -48,7 +66,7 @@ def show_calendar_view(daily_df, value_col):
                     unsafe_allow_html=True
                 )
 
-
+# ---- Summary Stats ----
 def show_summary_metrics(daily_df, value_col):
     st.subheader("🔍 Summary Stats")
 
@@ -89,14 +107,14 @@ def show_summary_metrics(daily_df, value_col):
         st.metric("🔺 Max Day", f"{max_row['Day'].strftime('%b %d')} ({int(max_row[value_col])})")
         st.metric("🔻 Min Day", f"{min_row['Day'].strftime('%b %d')} ({int(min_row[value_col])})")
 
-
+# ---- Single-Day Metrics ----
 def show_single_day_metrics(df):
     st.subheader("🗓 Single-Day Scheduling Metrics")
 
     df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
 
-    if "date" not in df.columns or "time" not in df.columns or "projection" not in df.columns:
-        st.warning("Missing required columns: date, time, projection")
+    if "date" not in df.columns or "time" not in df.columns or "dealer_projection" not in df.columns:
+        st.warning("Missing required columns: date, time, dealer_projection")
         return
 
     df["is_restart"] = df["event_number"].astype(str).str.contains("r", case=False)
@@ -120,7 +138,7 @@ def show_single_day_metrics(df):
     show_calendar_view(weekly, "Projected Dealers")
     show_summary_metrics(weekly, "Projected Dealers")
 
-
+# ---- Restart Metrics ----
 def show_restart_metrics(df):
     st.subheader("🔁 Restart Scheduling Metrics")
 
@@ -130,7 +148,6 @@ def show_restart_metrics(df):
         st.warning("Missing required columns for restart metrics.")
         return
 
-    # Use base event logic to identify restarts
     df["event_number_str"] = df["event_number"].astype(str).str.strip()
 
     def base_event(ev):
@@ -154,13 +171,7 @@ def show_restart_metrics(df):
 
     st.markdown("### 🔍 Restart Lineage Explorer")
 
-    # Step 1: Get all base events with restarts
     restart_df["event_number_str"] = restart_df["event_number"].astype(str).str.strip()
-
-    def base_event(ev):
-        match = re.match(r"(\d+)", str(ev).strip())
-        return match.group(1) if match else str(ev).strip()
-
     restart_df["event_base"] = restart_df["event_number_str"].apply(base_event)
     base_events = sorted(restart_df["event_base"].unique())
 
@@ -176,21 +187,15 @@ def show_restart_metrics(df):
     ]
     st.dataframe(lineage_df[display_cols], use_container_width=True)
 
+# ---- Dealer Summary Table ----
+def build_dealer_summary_table(dealers_df, tournaments_df, scheduled_dealers):
+    summary_rows = []
 
-def show_scheduling_metrics():
-    st.title("📊 Scheduling Metrics")
+    dealers_df["shift_type"] = dealers_df["shift_type"].str.lower().str.strip()
+    dealers_df["ee_number"] = dealers_df["ee_number"].astype(str).str.strip()
 
-    if "tournament_df" not in st.session_state or st.session_state.tournament_df is None:
-        st.error("Tournament data not loaded. Please import it on the import page.")
-        return
+    tournaments_df["date"] = pd.to_datetime(tournaments_df["date"], errors="coerce")
+    tournaments_df["time"] = tournaments_df["time"].apply(parse_time)
+    tournaments_df["event_number"] = tournaments_df["event_number"].astype(str).str.strip()
 
-    df = st.session_state.tournament_df.copy()
-
-    tab1, tab2 = st.tabs(["Single-Day Metrics", "Restart Metrics"])
-    with tab1:
-        show_single_day_metrics(df)
-    with tab2:
-        show_restart_metrics(df)
-
-    st.markdown("---")
-    st.caption("Dealer projections are based on current tournament data and scheduling assumptions.")
+    # Implementation logic for building dealer summary should go here

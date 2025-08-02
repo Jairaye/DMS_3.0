@@ -2,14 +2,27 @@ import pandas as pd
 import streamlit as st
 import datetime
 
-# ---- Helper: Standard Eligibility ----
-def get_eligible_dealers(dealers_df, tournament, scheduled_dealers):
-    # Normalize dealer column names
-    dealers_df.columns = dealers_df.columns.str.strip().str.lower()
+# ---- Helper: Parse and Normalize Tournament Time ----
+def parse_time(val):
+    if isinstance(val, str) and "TBD" not in val.upper():
+        try:
+            return pd.to_datetime(val, format="%I:%M %p")
+        except Exception:
+            return pd.NaT
+    elif isinstance(val, datetime.time):
+        return pd.Timestamp.combine(pd.Timestamp("1900-01-01"), val)
+    elif isinstance(val, pd.Timestamp):
+        return val
+    else:
+        return pd.NaT
 
-    start_hour = tournament["time"].hour
+# ---- Helper: Get Eligible Dealers ----
+def get_eligible_dealers(dealers_df, tournament, scheduled_dealers):
     game_type = tournament["event_name"].lower()
     tournament_date = tournament["date"]
+    start_time = tournament["time"]
+    weekday_abbr = pd.to_datetime(tournament_date).strftime("%a").upper()
+    avail_col = f"AVAIL-{weekday_abbr}"  # ✅ Preserve uppercase
 
     # Remove already scheduled dealers
     already_scheduled = set()
@@ -17,63 +30,34 @@ def get_eligible_dealers(dealers_df, tournament, scheduled_dealers):
         already_scheduled.update(dealer_list)
     unscheduled = dealers_df[~dealers_df["ee_number"].isin(already_scheduled)]
 
-    # Filter by availability
-    weekday_abbr = pd.to_datetime(tournament_date).strftime("%a").upper()  # e.g., MON, TUE
-    avail_col = f"avail-{weekday_abbr}"
-
+    # Check availability column
     if avail_col not in unscheduled.columns:
         st.warning(f"⚠️ Missing availability column: '{avail_col}'. Skipping tournament.")
         return pd.DataFrame(columns=dealers_df.columns)
 
     available = unscheduled[unscheduled[avail_col] == "Y"]
 
-    # Prioritize mixed dealers for mixed games
+    # Prioritize mixed dealers
     if "mixed" in game_type:
         available = available.sort_values(by="shift_type", key=lambda x: x != "mixed")
 
-    # Shift-based filtering
-    if start_hour >= 15:
+    # Shift logic
+    if pd.isnull(start_time):
+        eligible = available
+    elif start_time.hour <= 16:
+        eligible = available[available["shift_type"].isin(["day", "mixed"])]
+    else:
         swing = available[available["shift_type"] == "swing"]
         day = available[available["shift_type"] == "day"]
         mixed = available[available["shift_type"] == "mixed"]
         eligible = pd.concat([swing, day, mixed])
-    else:
-        eligible = available[available["shift_type"].isin(["day", "mixed"])]
 
     return eligible.sort_values("ee_number")
-
-# ---- Helper: Flexible Eligibility for TBD ----
-def get_flexible_dealers(dealers_df, tournament, scheduled_dealers):
-    # Normalize dealer column names
-    dealers_df.columns = dealers_df.columns.str.strip().str.lower()
-
-    game_type = tournament["event_name"].lower()
-    tournament_date = tournament["date"]
-
-    already_scheduled = set()
-    for dealer_list in scheduled_dealers.values():
-        already_scheduled.update(dealer_list)
-    unscheduled = dealers_df[~dealers_df["ee_number"].isin(already_scheduled)]
-
-    weekday_abbr = pd.to_datetime(tournament_date).strftime("%a").upper()
-    avail_col = f"avail-{weekday_abbr}"
-
-    if avail_col not in unscheduled.columns:
-        st.warning(f"⚠️ Missing availability column: '{avail_col}'. Skipping tournament.")
-        return pd.DataFrame(columns=dealers_df.columns)
-
-    available = unscheduled[unscheduled[avail_col] == "Y"]
-
-    if "mixed" in game_type:
-        available = available.sort_values(by="shift_type", key=lambda x: x != "mixed")
-
-    return available.sort_values("ee_number")
 
 # ---- Core Assignment Logic ----
 def build_daily_schedule(dealers_df, tournaments_df):
     scheduled_dealers = {}
 
-    # Replace null times with default for sorting
     tournaments_df_sorted = tournaments_df.copy()
     tournaments_df_sorted["time"] = tournaments_df_sorted["time"].fillna(pd.Timestamp("12:00"))
 
@@ -82,16 +66,14 @@ def build_daily_schedule(dealers_df, tournaments_df):
 
         try:
             demand = int(tournament["projection"])
+            if demand <= 0:
+                continue
         except (ValueError, TypeError):
-            st.warning(f"⚠️ Invalid projection for event {tournament_id}. Skipping.")
-            continue
+            continue  # ✅ Skip if projection is missing or invalid
 
-        time_value = tournament["time"]
-
-        if pd.isnull(time_value):
-            eligible = get_flexible_dealers(dealers_df, tournament, scheduled_dealers)
-        else:
-            eligible = get_eligible_dealers(dealers_df, tournament, scheduled_dealers)
+        eligible = get_eligible_dealers(dealers_df, tournament, scheduled_dealers)
+        if eligible.empty:
+            continue  # ✅ Skip if no eligible dealers
 
         assigned = eligible.head(demand)["ee_number"].tolist()
         scheduled_dealers[tournament_id] = assigned
@@ -101,7 +83,7 @@ def build_daily_schedule(dealers_df, tournaments_df):
 # ---- Streamlit UI ----
 def run_schedule_builder():
     st.title("🗓 Schedule Builder")
-    st.markdown("Assign dealers to tournaments based on shift, availability, and game type.")
+    st.markdown("Assign dealers to tournaments based on shift, availability, and projection.")
 
     dealers_df = st.session_state.get("dealer_df")
     tournaments_df = st.session_state.get("tournament_df")
@@ -110,24 +92,15 @@ def run_schedule_builder():
         st.warning("Missing dealer or tournament data. Please upload files on the Import page.")
         return
 
-    # Normalize tournament column names
+    # ✅ Normalize dealer columns and shift_type
+    dealers_df.columns = dealers_df.columns.str.strip()
+    dealers_df["shift_type"] = dealers_df["shift_type"].str.lower().str.strip()
+
+    # ✅ Normalize tournament columns
     tournaments_df.columns = tournaments_df.columns.str.strip().str.lower()
 
-    # Convert time column to datetime, ignore TBD
+    # ✅ Parse tournament times
     if "time" in tournaments_df.columns:
-        def parse_time(val):
-            if isinstance(val, str) and "TBD" not in val.upper():
-                try:
-                    return pd.to_datetime(val, format="%I:%M %p")
-                except Exception:
-                    return pd.NaT
-            elif isinstance(val, datetime.time):
-                return pd.Timestamp.combine(pd.Timestamp("1900-01-01"), val)
-            elif isinstance(val, pd.Timestamp):
-                return val
-            else:
-                return pd.NaT
-
         tournaments_df["time"] = tournaments_df["time"].apply(parse_time)
     else:
         st.warning("⏰ 'time' column not found. All tournaments will be treated as TBD.")
